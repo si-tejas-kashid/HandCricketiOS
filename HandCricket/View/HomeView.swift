@@ -46,7 +46,10 @@ struct HomeView: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                             .background(
-                                NavigationLink(destination: PlayHandCricketView(topBar: topBar as! AnyView), isActive: $showPlayHandCricket) { EmptyView() }.hidden()
+                                NavigationLink(
+                                    destination: PlayHandCricketView(topBar: AnyView(topBar), goHome: { showPlayHandCricket = false }),
+                                    isActive: $showPlayHandCricket
+                                ) { EmptyView() }.hidden()
                             )
                             // How to Play Card (on Home, with white background and title)
                             ZStack {
@@ -274,6 +277,7 @@ struct HomeView: View {
 
 struct PlayHandCricketView: View {
     let topBar: AnyView
+    let goHome: () -> Void
     @Environment(\.presentationMode) var presentationMode
     @State private var playerName: String = ""
     @State private var savedName: String? = nil
@@ -283,10 +287,11 @@ struct PlayHandCricketView: View {
         ZStack {
             Color.navy.ignoresSafeArea()
             if showTossScreen {
-                TossScreen(topBar: topBar, onBack: { presentationMode.wrappedValue.dismiss() })
+                TossScreen(topBar: topBar, goHome: goHome, onBack: { presentationMode.wrappedValue.dismiss() })
             } else {
                 NameEntryScreen(
                     topBar: topBar,
+                    goHome: goHome,
                     playerName: $playerName,
                     savedName: $savedName,
                     onSave: { showTossScreen = true },
@@ -300,6 +305,7 @@ struct PlayHandCricketView: View {
 
 struct NameEntryScreen: View {
     let topBar: AnyView
+    let goHome: () -> Void
     @Binding var playerName: String
     @Binding var savedName: String?
     var onSave: () -> Void
@@ -310,9 +316,9 @@ struct NameEntryScreen: View {
             Rectangle()
                 .fill(Color.gold)
                 .frame(height: 1)
-            // Back to Home
+            // Back to Home button
             HStack {
-                Button(action: onBack) {
+                Button(action: goHome) {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.left")
                             .font(.system(size: 20, weight: .bold))
@@ -365,9 +371,8 @@ struct NameEntryScreen: View {
                 ZStack {
                     Image("gameMessageBg")
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 60)
-                        .clipped()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 80)
                     Text("VS")
                         .font(.system(size: 36, weight: .bold))
                         .foregroundColor(Color.gold)
@@ -390,120 +395,234 @@ struct NameEntryScreen: View {
 
 struct TossScreen: View {
     let topBar: AnyView
+    let goHome: () -> Void
     var onBack: () -> Void
     @State private var selectedToss: TossOption? = nil
     @State private var timerProgress: Double = 0
     @State private var timerActive: Bool = true
     @State private var coinSpinProgress: Double = 0
+    @State private var showTossingHand: Bool = false
+    @State private var showResult: Bool = false
+    @State private var tossResult: TossOption? = nil
+    @State private var coinScale: CGFloat = 0.1
+    @State private var coinOffset: CGFloat = 0
+    @State private var showTossScreen: Bool = false
+    @State private var showBatBowlChoice: Bool = false
     let timerDuration: Double = 10.0
     let timerInterval: Double = 0.05
-    
     enum TossOption { case heads, tails }
-    
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            Rectangle()
-                .fill(Color.gold)
-                .frame(height: 1)
-            // Back to Home
-            HStack {
-                Button(action: onBack) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.left")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(.white)
-                        Text("Back to Home")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.white)
+        ZStack {
+            if showBatBowlChoice {
+                BatBowlChoiceScreen(topBar: topBar, goHome: goHome, onBack: {
+                    showBatBowlChoice = false
+                    showTossScreen = false
+                    showTossingHand = false
+                    showResult = false
+                    coinScale = 0.1
+                })
+            } else if showTossScreen {
+                VStack(spacing: 0) {
+                    topBar
+                    Rectangle()
+                        .fill(Color.gold)
+                        .frame(height: 1)
+                    // Back to Home button
+                    HStack {
+                        Button(action: goHome) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.left")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("Back to Home")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        Spacer()
                     }
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 18)
-            .background(Color.navy.opacity(0.85))
-            ScrollView {
-                VStack(spacing: 24) {
-                    // TOSS Header with gameMessageBg and centered text
-                    ZStack {
-                        Image("gameMessageBg")
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 18)
+                    .background(Color.navy.opacity(0.85))
+                    Spacer()
+                    if showTossingHand {
+                        // Tossing Hand Animation
+                        Image("tossingHand")
                             .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(height: 60)
-                        Text("TOSS")
-                            .font(.system(size: 36, weight: .bold))
-                            .foregroundColor(Color.gold)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 300, height: 300)
+                            .transition(.scale.combined(with: .opacity))
                     }
-                    Text("Select heads or tails.")
-                        .font(.system(size: 15))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 16)
-                    // Timer
-                    TimerHourglassView(progress: min(timerProgress, 1.0))
-                        .frame(width: 60, height: 60)
-                        .padding(.bottom, 8)
-                    // Toss Options with checkboxes below
-                    HStack(spacing: 24) {
-                        VStack(spacing: 8) {
-                            tossOptionView(option: .heads, imageName: "headsToss", label: "HEADS")
-                            Button(action: { selectedToss = .heads }) {
-                                radioButton(selected: selectedToss == .heads)
+                    if showResult {
+                        // Result Coin (no text)
+                        Image(tossResult == .heads ? "headsToss" : "tailsToss")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 200, height: 200)
+                            .scaleEffect(coinScale)
+                            .offset(y: coinOffset)
+                            .shadow(radius: 10)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.6, dampingFraction: 0.6)) {
+                                    coinScale = coinScale == 1.0 ? 1.2 : 1.0
+                                }
                             }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                        VStack(spacing: 8) {
-                            tossOptionView(option: .tails, imageName: "tailsToss", label: "TAILS")
-                            Button(action: { selectedToss = .tails }) {
-                                radioButton(selected: selectedToss == .tails)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                    // Play Toss Button
-                    Button(action: {}) {
-                        Text("Play Toss")
-                            .font(.system(size: 28, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
-                            .background(
-                                Group {
-                                    if selectedToss != nil {
-                                        LinearGradient(gradient: Gradient(colors: [Color.gold, Color.gold.opacity(0.8)]), startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    } else {
-                                        Color.navy.opacity(0.5)
+                            .onAppear {
+                                // If user wins, show coin for 1.2s then go to Bat/Bowl choice
+                                if tossResult == selectedToss {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                        showResult = false
+                                        showBatBowlChoice = true
                                     }
                                 }
-                            )
-                            .foregroundColor(selectedToss != nil ? .navy : .gray)
-                            .cornerRadius(24)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 24)
-                                    .stroke(selectedToss != nil ? Color.gold : Color.gray.opacity(0.5), lineWidth: 3)
-                            )
-                            .padding(.horizontal, 24)
+                            }
                     }
-                    .disabled(selectedToss == nil)
+                    Spacer()
                 }
-                .padding(.top, 24)
-                .padding(.bottom, 40)
+                .background(Color.navy)
+                .onAppear {
+                    // First show tossing hand
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        showTossingHand = true
+                    }
+                    // After 2 seconds, hide tossing hand and show result
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showTossingHand = false
+                        }
+                        // After tossing hand is hidden, show result
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                showResult = true
+                                tossResult = Bool.random() ? .heads : .tails
+                            }
+                            withAnimation(.spring(response: 0.6, dampingFraction: 0.6)) {
+                                coinScale = 1.0
+                            }
+                        }
+                    }
+                }
+            } else {
+                VStack(spacing: 0) {
+                    topBar
+                    Rectangle()
+                        .fill(Color.gold)
+                        .frame(height: 1)
+                    // Back to Home button
+                    HStack {
+                        Button(action: goHome) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.left")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("Back to Home")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 18)
+                    .background(Color.navy.opacity(0.85))
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            // TOSS Header with gameMessageBg and centered text
+                            ZStack {
+                                Image("gameMessageBg")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(height: 80)
+                                Text("TOSS")
+                                    .font(.system(size: 36, weight: .bold))
+                                    .foregroundColor(Color.gold)
+                            }
+                            Text("Select heads or tails.")
+                                .font(.system(size: 15))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 16)
+                            // Timer
+                            TimerHourglassView(progress: min(timerProgress, 1.0))
+                                .frame(width: 36, height: 36)
+                                .padding(.bottom, 8)
+                            // Toss Options with checkboxes below
+                            HStack(spacing: 24) {
+                                VStack(spacing: 8) {
+                                    tossOptionView(option: .heads, imageName: "headsToss", label: "HEADS")
+                                        .onTapGesture {
+                                            selectedToss = .heads
+                                        }
+                                    Button(action: { selectedToss = .heads }) {
+                                        radioButton(selected: selectedToss == .heads)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                                VStack(spacing: 8) {
+                                    tossOptionView(option: .tails, imageName: "tailsToss", label: "TAILS")
+                                        .onTapGesture {
+                                            selectedToss = .tails
+                                        }
+                                    Button(action: { selectedToss = .tails }) {
+                                        radioButton(selected: selectedToss == .tails)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                            }
+                            // Play Toss Button
+                            Button(action: {
+                                showTossScreen = true
+                            }) {
+                                Text("Play Toss")
+                                    .font(.system(size: 28, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 18)
+                                    .background(
+                                        Group {
+                                            if selectedToss != nil {
+                                                LinearGradient(gradient: Gradient(colors: [Color.gold, Color.gold.opacity(0.8)]), startPoint: .topLeading, endPoint: .bottomTrailing)
+                                            } else {
+                                                Color.navy.opacity(0.5)
+                                            }
+                                        }
+                                    )
+                                    .foregroundColor(selectedToss != nil ? .navy : .gray)
+                                    .cornerRadius(24)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 24)
+                                            .stroke(selectedToss != nil ? Color.gold : Color.gray.opacity(0.5), lineWidth: 3)
+                                    )
+                                    .padding(.horizontal, 24)
+                            }
+                            .disabled(selectedToss == nil && timerProgress < 1.0)
+                        }
+                        .padding(.top, 24)
+                        .padding(.bottom, 40)
+                        .onChange(of: timerProgress) { newValue in
+                            if newValue >= 1.0 && selectedToss == nil {
+                                // Timer ended and no selection, randomly select and proceed
+                                selectedToss = Bool.random() ? .heads : .tails
+                                showTossScreen = true
+                            }
+                        }
+                    }
+                    .background(Color.navy)
+                }
+                .background(Color.navy)
+                .onAppear {
+                    timerActive = true
+                    timerProgress = 0
+                    startTimer()
+                    // Start coin spin animation
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        coinSpinProgress = 1.0
+                    }
+                }
+                .onDisappear {
+                    timerActive = false
+                    coinSpinProgress = 0
+                }
             }
-            .background(Color.navy)
-        }
-        .background(Color.navy)
-        .onAppear {
-            timerActive = true
-            timerProgress = 0
-            startTimer()
-            // Start coin spin animation
-            withAnimation(.easeInOut(duration: 0.5)) {
-                coinSpinProgress = 1.0
-            }
-        }
-        .onDisappear {
-            timerActive = false
-            coinSpinProgress = 0
         }
     }
     
@@ -581,13 +700,14 @@ struct TimerHourglassView: View {
         ZStack {
             Circle()
                 .fill(Color(red: 0.19, green: 0.25, blue: 0.39))
-            Arc(startAngle: .degrees(-45), endAngle: .degrees(-45 + 360 * progress), clockwise: false)
-                .stroke(Color.gold, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+            Arc(startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * progress), clockwise: false)
+                .stroke(Color.gold, style: StrokeStyle(lineWidth: 5, lineCap: .round))
             Image("hourglass")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+                .frame(width: 16, height: 16)
         }
+        .frame(width: 36, height: 36)
     }
 }
 
@@ -683,5 +803,184 @@ struct YouTubePlayerView: UIViewRepresentable {
         guard let youtubeURL = URL(string: urlString) else { return }
         uiView.scrollView.isScrollEnabled = false
         uiView.load(URLRequest(url: youtubeURL))
+    }
+}
+
+struct BatBowlChoiceScreen: View {
+    let topBar: AnyView
+    let goHome: () -> Void
+    var onBack: () -> Void
+    @State private var selected: Choice? = nil
+    enum Choice { case bat, bowl }
+    var body: some View {
+        VStack(spacing: 0) {
+            topBar
+            Rectangle()
+                .fill(Color.gold)
+                .frame(height: 1)
+            // Back to Home button
+            HStack {
+                Button(action: goHome) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.white)
+                        Text("Back to Home")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
+            .background(Color.navy.opacity(0.85))
+            VStack(spacing: 16) {
+                ZStack(alignment: .top) {
+                    Image("gameMessageBg")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 80)
+                    Text("TOSS WIN")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.top, 24)
+                }
+               
+                Text("You won the toss! Choose to bat or bowl.")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                TimerHourglassView(progress: 1.0)
+                    .frame(width: 36, height: 36)
+                    .padding(.bottom, 8)
+                HStack(spacing: 24) {
+                    // Bat Option + radio
+                    VStack(spacing: 20) {
+                        Button(action: { selected = .bat }) {
+                            VStack(spacing: 16) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(red: 0.19, green: 0.25, blue: 0.39))
+                                        .frame(width: 80, height: 80)
+                                    Image("batting")
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 44, height: 44)
+                                }
+                                Text("BAT")
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .frame(width: 170, height: 200)
+                            .background(Color(red: 0.29, green: 0.36, blue: 0.54))
+                            .cornerRadius(28)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 28)
+                                    .stroke(selected == .bat ? Color.gold : Color.clear, lineWidth: 4)
+                            )
+                            .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
+                        }
+                        Button(action: { selected = .bat }) {
+                            ZStack {
+                                if selected == .bat {
+                                    Circle()
+                                        .fill(Color.gold)
+                                        .frame(width: 44, height: 44)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color(hex: "#BD9E5E"), lineWidth: 3)
+                                        )
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.navy)
+                                } else {
+                                    Circle()
+                                        .fill(Color.navy)
+                                        .frame(width: 44, height: 44)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.gold, lineWidth: 4)
+                                        )
+                                }
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    // Bowl Option + radio
+                    VStack(spacing: 20) {
+                        Button(action: { selected = .bowl }) {
+                            VStack(spacing: 16) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(red: 0.19, green: 0.25, blue: 0.39))
+                                        .frame(width: 80, height: 80)
+                                    Image("bowling")
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 44, height: 44)
+                                }
+                                Text("BOWL")
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .frame(width: 170, height: 200)
+                            .background(Color(red: 0.29, green: 0.36, blue: 0.54))
+                            .cornerRadius(28)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 28)
+                                    .stroke(selected == .bowl ? Color.gold : Color.clear, lineWidth: 4)
+                            )
+                            .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
+                        }
+                        Button(action: { selected = .bowl }) {
+                            ZStack {
+                                if selected == .bowl {
+                                    Circle()
+                                        .fill(Color.gold)
+                                        .frame(width: 44, height: 44)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color(hex: "#BD9E5E"), lineWidth: 3)
+                                        )
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.navy)
+                                } else {
+                                    Circle()
+                                        .fill(Color.navy)
+                                        .frame(width: 44, height: 44)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.gold, lineWidth: 4)
+                                        )
+                                }
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.top, 16)
+                Button(action: {}) {
+                    Text("Continue")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(selected != nil ? Color.gold : Color.gray.opacity(0.5))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(selected != nil ? Color.gold : Color.gray.opacity(0.5), lineWidth: 2)
+                        )
+                }
+                .disabled(selected == nil)
+                .padding(.horizontal, 32)
+                .padding(.top, 16)
+            }
+            Spacer()
+        }
+        .background(Color.navy)
     }
 } 
