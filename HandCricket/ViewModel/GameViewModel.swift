@@ -13,11 +13,19 @@ class GameViewModel: ObservableObject {
     @Published var playerName: String = "Player 1"
     @Published var gameStatus: String = "Welcome to Hand Cricket!"
     
-    init() {
-        self.model = GameModel(
-            player: Player(name: "Player 1"),
-            computer: Player(name: "Computer")
-        )
+    init(initialBatter: InitialBatterType) {
+        let player = Player(name: "Player 1")
+        let computer = Player(name: "Computer")
+        var gameModel = GameModel(player: player, computer: computer)
+        switch initialBatter {
+        case .player:
+            gameModel.currentBatter = .player
+            gameModel.gameState = .playerBatting
+        case .computer:
+            gameModel.currentBatter = .computer
+            gameModel.gameState = .computerBatting
+        }
+        self.model = gameModel
     }
     
     // MARK: - Access to Model Properties

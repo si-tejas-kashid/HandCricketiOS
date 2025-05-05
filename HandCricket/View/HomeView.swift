@@ -393,6 +393,12 @@ struct NameEntryScreen: View {
     }
 }
 
+// Add an enum for batter type to match GameModel.PlayerType
+enum InitialBatterType {
+    case player, computer
+}
+
+// In TossScreen, add state for navigation and initial batter
 struct TossScreen: View {
     let topBar: AnyView
     let goHome: () -> Void
@@ -408,18 +414,39 @@ struct TossScreen: View {
     @State private var coinOffset: CGFloat = 0
     @State private var showTossScreen: Bool = false
     @State private var showBatBowlChoice: Bool = false
+    @State private var showLoseTossScreen: Bool = false
+    @State private var navigateToGame: Bool = false
+    @State private var initialBatter: InitialBatterType? = nil
     let timerDuration: Double = 10.0
     let timerInterval: Double = 0.05
     enum TossOption { case heads, tails }
     var body: some View {
         ZStack {
-            if showBatBowlChoice {
+            NavigationLink(
+                destination: initialBatter != nil ? GameViewWrapper(initialBatter: initialBatter!) : nil,
+                isActive: $navigateToGame
+            ) { EmptyView() }.hidden()
+            if showLoseTossScreen {
+                LoseTossScreen(topBar: topBar, goHome: goHome, onBack: {
+                    showLoseTossScreen = false
+                }, onTimerEnd: {
+                    // Computer randomly selects bat or bowl after timer
+                    let computerChoice = computerRandomBatBowlChoice()
+                    // If computer chooses to bat, user bowls, and vice versa
+                    initialBatter = (computerChoice == .bat) ? .computer : .player
+                    navigateToGame = true
+                })
+            } else if showBatBowlChoice {
                 BatBowlChoiceScreen(topBar: topBar, goHome: goHome, onBack: {
                     showBatBowlChoice = false
                     showTossScreen = false
                     showTossingHand = false
                     showResult = false
                     coinScale = 0.1
+                }, onSelection: { userChoice in
+                    // If user chooses to bat, user bats, else computer bats
+                    initialBatter = (userChoice == .bat) ? .player : .computer
+                    navigateToGame = true
                 })
             } else if showTossScreen {
                 VStack(spacing: 0) {
@@ -473,6 +500,12 @@ struct TossScreen: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                                         showResult = false
                                         showBatBowlChoice = true
+                                    }
+                                } else {
+                                    // User loses toss
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                        showResult = false
+                                        showLoseTossScreen = true
                                     }
                                 }
                             }
@@ -689,6 +722,9 @@ struct TossScreen: View {
                 timerProgress = 1.0
                 timer.invalidate()
                 timerActive = false
+                if selectedToss == nil {
+                    selectedToss = Bool.random() ? .heads : .tails
+                }
             }
         }
     }
@@ -812,6 +848,13 @@ struct BatBowlChoiceScreen: View {
     var onBack: () -> Void
     @State private var selected: Choice? = nil
     enum Choice { case bat, bowl }
+    // Timer logic for auto-select
+    @State private var timerProgress: Double = 0
+    @State private var timerActive: Bool = true
+    let timerDuration: Double = 7.0 // seconds to choose
+    let timerInterval: Double = 0.05
+    var onSelection: (Choice) -> Void
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -846,13 +889,13 @@ struct BatBowlChoiceScreen: View {
                         .foregroundColor(.white)
                         .padding(.top, 24)
                 }
-               
+                
                 Text("You won the toss! Choose to bat or bowl.")
                     .font(.system(size: 16))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
-                TimerHourglassView(progress: 1.0)
+                TimerHourglassView(progress: min(timerProgress, 1.0))
                     .frame(width: 36, height: 36)
                     .padding(.bottom, 8)
                 HStack(spacing: 24) {
@@ -962,7 +1005,12 @@ struct BatBowlChoiceScreen: View {
                     }
                 }
                 .padding(.top, 16)
-                Button(action: {}) {
+                Button(action: {
+                    timerActive = false
+                    if let selected = selected {
+                        onSelection(selected)
+                    }
+                }) {
                     Text("Continue")
                         .font(.system(size: 22, weight: .bold))
                         .foregroundColor(.white)
@@ -982,5 +1030,135 @@ struct BatBowlChoiceScreen: View {
             Spacer()
         }
         .background(Color.navy)
+        .onAppear {
+            timerActive = true
+            timerProgress = 0
+            startTimer()
+        }
+        .onDisappear {
+            timerActive = false
+        }
+    }
+
+    func startTimer() {
+        Timer.scheduledTimer(withTimeInterval: timerInterval, repeats: true) { timer in
+            if !timerActive { timer.invalidate(); return }
+            if timerProgress < 1.0 {
+                timerProgress += timerInterval / timerDuration
+            } else {
+                timerProgress = 1.0
+                timer.invalidate()
+                timerActive = false
+                // If user hasn't selected, randomly pick for them
+                if selected == nil {
+                    selected = Bool.random() ? .bat : .bowl
+                }
+                // If a selection is made, call onSelection(selected)
+                if let selected = selected {
+                    onSelection(selected)
+                }
+            }
+        }
+    }
+}
+
+// Helper for computer's random bat/bowl after losing toss
+func computerRandomBatBowlChoice() -> BatBowlChoiceScreen.Choice {
+    return Bool.random() ? .bat : .bowl
+}
+
+struct LoseTossScreen: View {
+    let topBar: AnyView
+    let goHome: () -> Void
+    var onBack: () -> Void
+    var onTimerEnd: (() -> Void)? = nil
+    @State private var timerProgress: Double = 0
+    @State private var timerActive: Bool = true
+    let timerDuration: Double = 5.0
+    let timerInterval: Double = 0.05
+
+    var body: some View {
+        VStack(spacing: 0) {
+            topBar
+            Rectangle()
+                .fill(Color.gold)
+                .frame(height: 1)
+            // Back to Home button
+            HStack {
+                Button(action: goHome) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.white)
+                        Text("Back to Home")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
+            .background(Color.navy.opacity(0.85))
+            // Header
+            ZStack(alignment: .top) {
+                Image("gameMessageBg")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: 80)
+                Text("LOSE TOSS")
+                    .font(.system(size: 36, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.top, 24)
+            }
+            // Large gap below header
+            Spacer().frame(height: 80)
+            // Timer and waiting text
+            VStack(spacing: 16) {
+                TimerHourglassView(progress: min(timerProgress, 1.0))
+                    .frame(width: 90, height: 90)
+                Text("Waiting...")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                Text("Opponent is deciding to bat or bowl. Please wait for your turn.")
+                    .font(.body)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            Spacer()
+        }
+        .background(Color.navy)
+        .onAppear {
+            timerActive = true
+            timerProgress = 0
+            startTimer()
+        }
+        .onDisappear {
+            timerActive = false
+        }
+    }
+
+    func startTimer() {
+        Timer.scheduledTimer(withTimeInterval: timerInterval, repeats: true) { timer in
+            if !timerActive { timer.invalidate(); return }
+            if timerProgress < 1.0 {
+                timerProgress += timerInterval / timerDuration
+            } else {
+                timerProgress = 1.0
+                timer.invalidate()
+                timerActive = false
+                onTimerEnd?()
+            }
+        }
+    }
+}
+
+// Wrapper to pass initialBatter to GameView
+struct GameViewWrapper: View {
+    let initialBatter: InitialBatterType
+    var body: some View {
+        GameView(initialBatter: initialBatter)
     }
 } 
